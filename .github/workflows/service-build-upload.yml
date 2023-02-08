@@ -33,6 +33,7 @@ jobs:
     env:
       REGISTRY: ${{ inputs.registry }}
       REPOSITORY: ${{ inputs.repository }}
+      AWS_ROLE: ${{ secrets.AWS_ROLE }}
 
     steps:
       - name: Checkout
@@ -52,7 +53,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-region: ${{ inputs.aws-region }}
-          role-to-assume: ${{ secrets.AWS_ROLE }}
+          role-to-assume: $AWS_ROLE
 
       - uses: docker/build-push-action@v2
         with:
