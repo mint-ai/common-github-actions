@@ -42,9 +42,9 @@ jobs:
 
       - name: Check AWS role value
         env:
-          aws-role: ${{ secrets.AWS_ROLE }}
+          aws_role: ${{ secrets.AWS_ROLE }}
         run: |
-          echo "$aws-role"  
+          echo "$aws_role"  
 
       - name: Set IMAGE_NAME
         run: |
@@ -58,7 +58,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-region: ${{ inputs.aws-region }}
-          role-to-assume: ${{ secrets.AWS_ROLE }}
+          role-to-assume: "${{ secrets.AWS_ROLE }}"
 
       - uses: docker/build-push-action@v2
         with:
