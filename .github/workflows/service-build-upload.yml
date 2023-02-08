@@ -3,18 +3,9 @@ name: Build and upload
 on:
   workflow_call:
     inputs:
-      # registry:
-      #   required: true
-      #   type: string
       repository:
         required: true
         type: string
-      # aws-role:
-      #   required: true
-      #   type: string
-      # aws-region:
-      #   required: true
-      #   type: string
       sonarqube:
         required: true
         type: boolean
@@ -33,7 +24,7 @@ jobs:
     env:
       REGISTRY: 857306286857.dkr.ecr.eu-west-1.amazonaws.com
       REPOSITORY: ${{ inputs.repository }}
-      aws-role: arn:aws:iam::857306286857:role/GithubActions
+      aws-role: ${{ secrets.AWS_ROLE}}
       aws-region: eu-west-1
 
 
