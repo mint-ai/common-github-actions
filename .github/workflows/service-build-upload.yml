@@ -3,16 +3,7 @@ name: Build and upload
 on:
   workflow_call:
     inputs:
-      registry:
-        required: true
-        type: string
       repository:
-        required: true
-        type: string
-      # aws-role:
-      #   required: true
-      #   type: string
-      aws-region:
         required: true
         type: string
       sonarqube:
@@ -31,15 +22,17 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      REGISTRY: ${{ inputs.registry }}
+      REGISTRY: 857306286857.dkr.ecr.eu-west-1.amazonaws.com
       REPOSITORY: ${{ inputs.repository }}
-      AWS_ROLE: ${{ secrets.AWS_ROLE }}
+      aws-role: arn:aws:iam::857306286857:role/GithubActions
+      aws-region: eu-west-1
+
 
     steps:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha }} 
 
       - name: Set IMAGE_NAME
         run: |
@@ -52,8 +45,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
-          aws-region: ${{ inputs.aws-region }}
-          role-to-assume: $AWS_ROLE
+          aws-region: ${{ env.aws-region }}
+          role-to-assume: ${{ env.aws-role }}
 
       - uses: docker/build-push-action@v2
         with:
