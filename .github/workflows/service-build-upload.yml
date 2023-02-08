@@ -33,7 +33,6 @@ jobs:
     env:
       REGISTRY: ${{ inputs.registry }}
       REPOSITORY: ${{ inputs.repository }}
-      AWS_ROLE: ${{ secrets.AWS_ROLE }}
 
     steps:
       - name: Checkout
@@ -41,11 +40,16 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Check AWS role value
+        env:
+          aws-role: ${{ secrets.AWS_ROLE }}
+        run: |
+          echo "$aws-role"  
+
       - name: Set IMAGE_NAME
         run: |
           GIT_SHORT_REV=$(git rev-parse --short HEAD)
           echo "IMAGE_NAME=$REGISTRY/$REPOSITORY:$GIT_SHORT_REV" >> $GITHUB_ENV
-          echo "AWS_ROLE_ASSUME=$AWS_ROLE" >> $GITHUB_ENV 
           
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -54,7 +58,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-region: ${{ inputs.aws-region }}
-          role-to-assume: ${{ env.AWS_ROLE_ASSUME }}
+          role-to-assume: ${{ secrets.AWS_ROLE }}
 
       - uses: docker/build-push-action@v2
         with:
