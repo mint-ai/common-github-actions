@@ -9,9 +9,9 @@ on:
       repository:
         required: true
         type: string
-      # aws-role:
-      #   required: true
-      #   type: string
+      aws-role:
+        required: true
+        type: string
       aws-region:
         required: true
         type: string
@@ -38,13 +38,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: Check AWS role value
-        env:
-          aws_role: ${{ secrets.AWS_ROLE }}
-        run: |
-          echo "$aws_role"  
+          ref: ${{ github.event.pull_request.head.sha }} 
 
       - name: Set IMAGE_NAME
         run: |
@@ -58,7 +52,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-region: ${{ inputs.aws-region }}
-          role-to-assume: "${{ secrets.AWS_ROLE }}"
+          role-to-assume: ${{ inputs.aws-role }}
 
       - uses: docker/build-push-action@v2
         with:
