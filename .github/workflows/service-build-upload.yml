@@ -9,9 +9,9 @@ on:
       repository:
         required: true
         type: string
-      aws-role:
-        required: true
-        type: string
+      # aws-role:
+      #   required: true
+      #   type: string
       aws-region:
         required: true
         type: string
@@ -52,7 +52,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-region: ${{ inputs.aws-region }}
-          role-to-assume: ${{ inputs.aws-role }}
+          role-to-assume: arn:aws:iam::857306286857:role/GithubActions
 
       - uses: docker/build-push-action@v2
         with:
