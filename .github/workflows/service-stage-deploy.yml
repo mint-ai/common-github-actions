@@ -54,4 +54,4 @@ jobs:
           address: ${{ secrets.ARGOCD_SERVER }}
           token: ${{ secrets.ARGOCD_AUTH_TOKEN }}
           action: sync
-          appName: "jobs"
+          appName: "apps"
