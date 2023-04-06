@@ -26,6 +26,8 @@ jobs:
       REPOSITORY: ${{ inputs.repository }}
       aws-role: arn:aws:iam::857306286857:role/GithubActions
       aws-region: eu-west-1
+      aws-domain: mint
+      aws-domain-owner: 857306286857
 
 
     steps:
@@ -51,6 +53,13 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Generate CodeArtifact password
+        id: codeartifact-password-generator
+        run: |
+          export CODEARTIFACT_PASSWORD=$(aws codeartifact get-authorization-token --domain-owner ${{ env.aws-domain-owner }} --domain ${{ env.aws-domain }} --query 'authorizationToken' --output text)
+          echo "::add-mask::$CODEARTIFACT_PASSWORD"
+          echo "codeartifact_password=$CODEARTIFACT_PASSWORD" >> $GITHUB_OUTPUT
 
       - uses: docker/build-push-action@v2
         with:
