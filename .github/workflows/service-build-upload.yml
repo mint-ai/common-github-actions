@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   build-upload:
+    if: ${{ github.event.issue.pull_request }}
     name: Build and upload new artifact
 
     runs-on: ubuntu-latest
