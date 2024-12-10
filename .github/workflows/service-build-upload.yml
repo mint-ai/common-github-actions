@@ -72,10 +72,9 @@ jobs:
 
       - name: Sonarqube
         if: ${{ inputs.sonarqube }}
-        uses: sonarsource/sonarqube-scan-action@master
+        uses: sonarsource/sonarqube-scan-action@v4.1.0
         env:
             SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-            SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       - name: Push ${{ env.IMAGE_NAME }} to Amazon ECR
         run: docker push ${{ env.IMAGE_NAME }}
