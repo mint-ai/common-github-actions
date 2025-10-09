@@ -73,7 +73,7 @@ jobs:
 
       - name: Sonarqube
         if: ${{ inputs.sonarqube }}
-        uses: sonarsource/sonarqube-scan-action@v4.2.1
+        uses: sonarsource/sonarqube-scan-action@v6.0.0
         env:
             SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
