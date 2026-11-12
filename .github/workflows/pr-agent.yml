@@ -1,0 +1,207 @@
+# Reusable AI pull request review with PR-Agent (https://docs.pr-agent.ai) on
+# Claude, shared by the repos in the PR-Agent pilot. It runs the review and
+# posts one sticky comment that explains the commands. Each repo has a short
+# caller workflow and its own .pr_agent.toml.
+#
+# Settings come in three layers, lowest precedence first:
+#   1. Core defaults: the pr-agent-core.toml written by the first step below.
+#      A repo's .pr_agent.toml can override any of them.
+#   2. The calling repo's .pr_agent.toml, read from its default branch: context
+#      files, review instructions and ignored paths.
+#   3. The env of the "Run PR-Agent" step: model, fallback, token cap and
+#      triggers. PR-Agent re-applies env vars after every toml merge, so a repo
+#      can't change these; setting them in .pr_agent.toml has no effect.
+# A key set in a later layer replaces the earlier value outright: lists and
+# multi-line strings are not merged.
+#
+# Versions: callers use the moving tag pr-agent-pilot. Every settings set is
+# also tagged once (pr-agent-v1.1, pr-agent-v2, ...). To start a new settings
+# set, merge the change here, tag it, and move pr-agent-pilot to it. Every
+# repo picks it up on its next run.
+#
+# Calling it (triggers and permissions have to be in the caller):
+#
+#   name: PR Agent
+#   on:
+#     pull_request:
+#       types: [opened, reopened, ready_for_review]
+#     issue_comment:
+#       types: [created]
+#   permissions:
+#     contents: read
+#     pull-requests: write
+#     issues: write
+#   jobs:
+#     pr-agent:
+#       uses: mint-ai/common-github-actions/.github/workflows/pr-agent.yml@pr-agent-pilot
+#       secrets:
+#         ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_KEY }}
+#       with:
+#         review-focus: test coverage
+#         ask-example: Can this effect run twice?
+#         context-note: the diff and the repo rules in `rules/`
+#
+# Spend is capped outside the repos by the Anthropic workspace spend limit.
+
+name: PR Agent
+
+on:
+  workflow_call:
+    inputs:
+      review-focus:
+        description: >-
+          What /review checks besides key issues, security and review effort,
+          as it reads in the guide comment, e.g. "flaky or dependent tests".
+        type: string
+        required: true
+      ask-example:
+        description: An example /ask question for the guide comment, without quotes.
+        type: string
+        required: true
+      context-note:
+        description: >-
+          What PR-Agent sees besides the diff, for the guide comment, e.g.
+          "the diff and `AGENTS.md`".
+        type: string
+        required: true
+      blind-spots:
+        description: What PR-Agent can't see, for the guide comment.
+        type: string
+        default: Jira, CI results or the running app
+    secrets:
+      ANTHROPIC_KEY:
+        description: Anthropic API key from the pilot workspace.
+        required: true
+
+env:
+  # The model for every repo. Changing it, the fallback or the token cap
+  # starts a new settings set.
+  PR_AGENT_MODEL: anthropic/claude-sonnet-5-5
+  PR_AGENT_MODEL_NAME: Claude Sonnet 5.5
+
+jobs:
+  review:
+    name: PR Agent
+    # Skip bots (Dependabot, PR-Agent's own comments) and drafts. On comments,
+    # only run for PR comments that look like a command and come from someone
+    # with write access, so plain discussion doesn't pull the image and nobody
+    # outside the org can spend the API budget.
+    if: >-
+      github.event.sender.type != 'Bot' &&
+      (
+        (github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request &&
+          startsWith(github.event.comment.body, '/') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+        )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Write core settings
+        # Layer 1. It is written into the workspace, which the PR-Agent
+        # container sees as /github/workspace. It lives in this file rather
+        # than a file of its own so it always comes from the same commit as
+        # the workflow. The run log shows "Applied extra settings from
+        # /github/workspace/pr-agent-core.toml" when PR-Agent loads it.
+        run: |
+          cat > "$GITHUB_WORKSPACE/pr-agent-core.toml" <<'EOF'
+          [config]
+          # More code around each hunk, so a change is judged with the rest of
+          # its function in view. Defaults: 5 before, 1 after, 10 dynamic.
+          patch_extra_lines_before = 10
+          patch_extra_lines_after = 3
+          # Extends a hunk upwards to its enclosing function or class, up to
+          # this many lines.
+          max_extra_lines_before_dynamic_context = 30
+
+          [pr_reviewer]
+          # Up to three concrete failure scenarios, each with whether tests
+          # cover it.
+          require_failure_modes = true
+          # Review diffs over max_model_tokens in up to three chunks instead of
+          # clipping them.
+          enable_large_pr_chunking = true
+
+          [pr_description]
+          publish_labels = false
+          EOF
+
+      - name: Run PR-Agent
+        # pragent/pr-agent:0.50.0-github_action, pinned by digest. To upgrade,
+        # take the digest of the new -github_action tag from Docker Hub.
+        uses: docker://pragent/pr-agent@sha256:548e894a88071180832b2f4233f734d0acd0db1a879e2fcbaa70bac8b8372ebe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC__KEY: ${{ secrets.ANTHROPIC_KEY }}
+          CONFIG__EXTRA_CONFIG_URL: /github/workspace/pr-agent-core.toml
+          CONFIG__MODEL: ${{ env.PR_AGENT_MODEL }}
+          # Same price as Sonnet 5.5; only used when the primary call fails.
+          CONFIG__FALLBACK_MODELS: '["anthropic/claude-sonnet-5"]'
+          # Caps the prompt per model call (twice PR-Agent's 32000 default; the
+          # model supports 1M tokens). Diffs over it are split into up to three
+          # /review calls (enable_large_pr_chunking above), then trimmed.
+          CONFIG__MAX_MODEL_TOKENS: '64000'
+          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review"]'
+          github_action_config.auto_review: 'true'
+          github_action_config.auto_improve: 'true'
+          # Don't overwrite the PR description the author wrote.
+          github_action_config.auto_describe: 'false'
+
+  guide:
+    name: Post assistant guide
+    # Same audience as the review: no drafts, no bot PRs. Comments don't
+    # change the guide, so it only runs on pull_request events.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.sender.type != 'Bot' &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Post or update the guide comment
+        # Updated in place when the text changes, never duplicated. Add a
+        # section here for each new assistant or capability; open PRs pick it
+        # up the next time they are opened, reopened or marked ready.
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: pr-assistant-guide
+          skip_unchanged: true
+          message: |
+            ## 🤖 AI assistants on this PR
+
+            <!--
+            Posted and kept up to date by the shared PR-Agent workflow,
+            mint-ai/common-github-actions/.github/workflows/pr-agent.yml.
+            -->
+
+            ### PR-Agent review
+
+            [PR-Agent](https://docs.pr-agent.ai) (${{ env.PR_AGENT_MODEL_NAME }}) reviews this PR once, when it's opened or marked ready for review. It doesn't run again on new pushes. Comment a command to run it again on the latest commit.
+
+            | Comment | What it does |
+            | --- | --- |
+            | `/review` | Reviews the changes: key issues, ${{ inputs.review-focus }}, security concerns and review effort |
+            | `/improve` | Suggests code changes that fix bugs or real risks |
+            | `/describe` | Adds an AI summary, a file walkthrough and a diagram to the description. Your text and the title are kept |
+            | `/ask "<question>"` | Answers a question about the changes, for example `/ask "${{ inputs.ask-example }}"` |
+            | `/help` | Lists every command |
+
+            <details>
+            <summary>How it works</summary>
+
+            - **One command per comment**, at the very start of the comment. Editing a comment doesn't re-run it.
+            - **Members and collaborators only** can run commands. Drafts get no automatic review.
+            - **React 👍 or 👎** on each PR-Agent comment. We count the reactions to decide whether to keep it.
+            - **It's a second pair of eyes,** not an approval. It sees ${{ inputs.context-note }}, not ${{ inputs.blind-spots }}.
+            - **Tuning:** review instructions, context files and ignored paths are in this repo's `.pr_agent.toml`. The model, limits and triggers are shared by every repo, in [mint-ai/common-github-actions](https://github.com/mint-ai/common-github-actions/blob/main/.github/workflows/pr-agent.yml).
+
+            </details>
