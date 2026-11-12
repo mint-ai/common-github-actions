@@ -36,10 +36,20 @@
 #       uses: mint-ai/common-github-actions/.github/workflows/pr-agent.yml@pr-agent-pilot
 #       secrets:
 #         ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_KEY }}
+#         PR_AGENT_JIRA_EMAIL: ${{ secrets.PR_AGENT_JIRA_EMAIL }}
+#         PR_AGENT_JIRA_TOKEN: ${{ secrets.PR_AGENT_JIRA_TOKEN }}
 #       with:
 #         review-focus: test coverage
 #         ask-example: Can this effect run twice?
 #         context-note: the diff and the repo rules in `rules/`
+#
+# Jira ticket context: when the caller passes the two PR_AGENT_JIRA_* secrets,
+# PR-Agent looks up the Jira keys in the PR title, branch name and description
+# (jira-project-keys only), adds each ticket's title, description and labels to
+# the /review and /describe prompts, and rates the PR against each ticket in
+# the review comment. PDT keeps acceptance criteria in the description, so no
+# requirements field is set. With no ticket found (PDT-0 chores) the rating is
+# left out. Without the secrets, Jira stays off.
 #
 # Spend is capped outside the repos by the Anthropic workspace spend limit.
 
@@ -67,11 +77,25 @@ on:
       blind-spots:
         description: What PR-Agent can't see, for the guide comment.
         type: string
-        default: Jira, CI results or the running app
+        default: CI results or the running app
+      jira-project-keys:
+        description: >-
+          JSON list of the Jira projects whose tickets PR-Agent looks up. Other
+          key-shaped text, such as SHA-256 or UTF-8, is never looked up.
+        type: string
+        default: '["PDT"]'
     secrets:
       ANTHROPIC_KEY:
         description: Anthropic API key from the pilot workspace.
         required: true
+      PR_AGENT_JIRA_EMAIL:
+        description: Email of the Jira account PR-Agent reads tickets as.
+        required: false
+      PR_AGENT_JIRA_TOKEN:
+        description: >-
+          Classic (unscoped) Atlassian API token of that account, with read
+          access to the jira-project-keys projects.
+        required: false
 
 env:
   # The model for every repo. Changing it, the fallback or the token cap
@@ -153,6 +177,13 @@ jobs:
           github_action_config.auto_improve: 'true'
           # Don't overwrite the PR description the author wrote.
           github_action_config.auto_describe: 'false'
+          # Jira ticket context (see the header). The site is only set when a
+          # token is passed: a site without credentials makes PR-Agent warn
+          # "Jira is partially configured" on every run.
+          JIRA__JIRA_SITE: ${{ secrets.PR_AGENT_JIRA_TOKEN != '' && 'mint-ai' || '' }}
+          JIRA__JIRA_API_EMAIL: ${{ secrets.PR_AGENT_JIRA_EMAIL }}
+          JIRA__JIRA_API_TOKEN: ${{ secrets.PR_AGENT_JIRA_TOKEN }}
+          JIRA__PROJECT_KEYS: ${{ inputs.jira-project-keys }}
 
   guide:
     name: Post assistant guide
@@ -203,5 +234,6 @@ jobs:
             - **React 👍 or 👎** on each PR-Agent comment. We count the reactions to decide whether to keep it.
             - **It's a second pair of eyes,** not an approval. It sees ${{ inputs.context-note }}, not ${{ inputs.blind-spots }}.
             - **Tuning:** review instructions, context files and ignored paths are in this repo's `.pr_agent.toml`. The model, limits and triggers are shared by every repo, in [mint-ai/common-github-actions](https://github.com/mint-ai/common-github-actions/blob/main/.github/workflows/pr-agent.yml).
+            ${{ secrets.PR_AGENT_JIRA_TOKEN != '' && '- **Jira ticket check:** `/review` reads the ticket named in the PR title, branch or description and rates how well the PR meets it. Put acceptance criteria in the ticket description to make the rating useful. `PDT-0` PRs get no rating.' || '' }}
 
             </details>
