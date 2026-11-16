@@ -51,6 +51,13 @@
 # requirements field is set. With no ticket found (PDT-0 chores) the rating is
 # left out. Without the secrets, Jira stays off.
 #
+# The token can be classic (unscoped) or scoped. mint-ai.atlassian.net only
+# accepts classic tokens; a scoped token there gets "Issue does not exist or you
+# do not have permission to see it" for every ticket. For a scoped token, set
+# jira-scoped-token: true, and PR-Agent sends its requests to the Atlassian API
+# gateway (api.atlassian.com/ex/jira/<cloud ID>) instead. The token needs the
+# read:jira-work scope. Ticket links in the review still point at the site.
+#
 # Spend is capped outside the repos by the Anthropic workspace spend limit.
 
 name: PR Agent
@@ -84,6 +91,13 @@ on:
           key-shaped text, such as SHA-256 or UTF-8, is never looked up.
         type: string
         default: '["PDT"]'
+      jira-scoped-token:
+        description: >-
+          Set to true when PR_AGENT_JIRA_TOKEN is a scoped Atlassian API token.
+          PR-Agent then reads tickets through the api.atlassian.com gateway
+          instead of mint-ai.atlassian.net, which rejects scoped tokens.
+        type: boolean
+        default: false
     secrets:
       ANTHROPIC_KEY:
         description: Anthropic API key from the pilot workspace.
@@ -93,8 +107,9 @@ on:
         required: false
       PR_AGENT_JIRA_TOKEN:
         description: >-
-          Classic (unscoped) Atlassian API token of that account, with read
-          access to the jira-project-keys projects.
+          Atlassian API token of that account, with read access to the
+          jira-project-keys projects. Classic (unscoped) by default; for a
+          scoped token, also set jira-scoped-token.
         required: false
 
 env:
@@ -184,6 +199,11 @@ jobs:
           JIRA__JIRA_API_EMAIL: ${{ secrets.PR_AGENT_JIRA_EMAIL }}
           JIRA__JIRA_API_TOKEN: ${{ secrets.PR_AGENT_JIRA_TOKEN }}
           JIRA__PROJECT_KEYS: ${{ inputs.jira-project-keys }}
+          # The cloud ID of mint-ai.atlassian.net, set only for scoped tokens
+          # (see the header). Empty keeps the site URL for classic tokens.
+          # PR-Agent ignores cloud_id in a repo's .pr_agent.toml, so it has to
+          # be set here.
+          JIRA__CLOUD_ID: ${{ secrets.PR_AGENT_JIRA_TOKEN != '' && inputs.jira-scoped-token && '5d43d9e6-456d-4110-a32e-396ca6b475a5' || '' }}
 
   guide:
     name: Post assistant guide
