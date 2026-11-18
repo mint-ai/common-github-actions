@@ -58,6 +58,12 @@
 # gateway (api.atlassian.com/ex/jira/<cloud ID>) instead. The token needs the
 # read:jira-work scope. Ticket links in the review still point at the site.
 #
+# Model and effort: Claude models from Opus 4.7 on think adaptively, and effort
+# (output_config.effort: low, medium, high, xhigh, max) sets how much. PR-Agent
+# only sends an effort when enable_claude_adaptive_thinking is on, and then uses
+# its own reasoning_effort, which defaults to medium. So both are set below
+# rather than left to the model's default.
+#
 # Spend is capped outside the repos by the Anthropic workspace spend limit.
 
 name: PR Agent
@@ -113,10 +119,11 @@ on:
         required: false
 
 env:
-  # The model for every repo. Changing it, the fallback or the token cap
-  # starts a new settings set.
-  PR_AGENT_MODEL: anthropic/claude-sonnet-5-5
-  PR_AGENT_MODEL_NAME: Claude Sonnet 5.5
+  # The model and effort for every repo. Changing them, the fallback or the
+  # token cap starts a new settings set.
+  PR_AGENT_MODEL: anthropic/claude-opus-5-5
+  PR_AGENT_MODEL_NAME: Claude Opus 5.5
+  PR_AGENT_EFFORT: medium
 
 jobs:
   review:
@@ -137,7 +144,10 @@ jobs:
         )
       )
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Sonnet 5.5 runs took 71 s at the median and 196 s at most (Nov 12–18).
+    # Opus with thinking is slower, and a chunked review makes up to six model
+    # calls, so this leaves room for them without letting a stuck run hang.
+    timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: write
@@ -181,8 +191,17 @@ jobs:
           ANTHROPIC__KEY: ${{ secrets.ANTHROPIC_KEY }}
           CONFIG__EXTRA_CONFIG_URL: /github/workspace/pr-agent-core.toml
           CONFIG__MODEL: ${{ env.PR_AGENT_MODEL }}
-          # Same price as Sonnet 5.5; only used when the primary call fails.
-          CONFIG__FALLBACK_MODELS: '["anthropic/claude-sonnet-5"]'
+          # Sends thinking: adaptive and output_config.effort to Claude. Without
+          # it PR-Agent sends neither, and the model runs at its default effort.
+          CONFIG__ENABLE_CLAUDE_ADAPTIVE_THINKING: 'true'
+          CONFIG__REASONING_EFFORT: ${{ env.PR_AGENT_EFFORT }}
+          # Only used when the primary call fails (an API error, overload or
+          # rate limit), at the same effort. The previous primary, at half the
+          # price of Opus 5.5; the run log shows when it was used.
+          CONFIG__FALLBACK_MODELS: '["anthropic/claude-sonnet-5-5"]'
+          # Seconds per model call (PR-Agent's default is 120). Opus with
+          # thinking on a full 64k-token prompt can take longer than that.
+          CONFIG__AI_TIMEOUT: '300'
           # Caps the prompt per model call (twice PR-Agent's 32000 default; the
           # model supports 1M tokens). Diffs over it are split into up to three
           # /review calls (enable_large_pr_chunking above), then trimmed.
