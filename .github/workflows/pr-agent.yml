@@ -124,6 +124,11 @@ env:
   PR_AGENT_MODEL: anthropic/claude-opus-5-5
   PR_AGENT_MODEL_NAME: Claude Opus 5.5
   PR_AGENT_EFFORT: medium
+  # /describe only. PR-Agent runs it on config.model_weak, and on the main
+  # model when that is unset. Sonnet 5.5 costs half as much as Opus 5.5, and a
+  # separate model keeps the describe cost apart in the Anthropic Console.
+  PR_AGENT_DESCRIBE_MODEL: anthropic/claude-sonnet-5-5
+  PR_AGENT_DESCRIBE_MODEL_NAME: Claude Sonnet 5.5
 
 jobs:
   review:
@@ -180,6 +185,11 @@ jobs:
 
           [pr_description]
           publish_labels = false
+          # /describe runs on every new PR, so the author's text and title are
+          # locked here: the AI summary is added below the author's text, and
+          # the title is never changed. Both are PR-Agent defaults.
+          add_original_user_description = true
+          generate_ai_title = false
           EOF
 
       - name: Run PR-Agent
@@ -191,6 +201,7 @@ jobs:
           ANTHROPIC__KEY: ${{ secrets.ANTHROPIC_KEY }}
           CONFIG__EXTRA_CONFIG_URL: /github/workspace/pr-agent-core.toml
           CONFIG__MODEL: ${{ env.PR_AGENT_MODEL }}
+          CONFIG__MODEL_WEAK: ${{ env.PR_AGENT_DESCRIBE_MODEL }}
           # Sends thinking: adaptive and output_config.effort to Claude. Without
           # it PR-Agent sends neither, and the model runs at its default effort.
           CONFIG__ENABLE_CLAUDE_ADAPTIVE_THINKING: 'true'
@@ -209,8 +220,10 @@ jobs:
           github_action_config.pr_actions: '["opened", "reopened", "ready_for_review"]'
           github_action_config.auto_review: 'true'
           github_action_config.auto_improve: 'true'
-          # Don't overwrite the PR description the author wrote.
-          github_action_config.auto_describe: 'false'
+          # Runs first, before the review. Adds a summary, a file walkthrough
+          # and a diagram below the author's description (see [pr_description]
+          # in the core settings).
+          github_action_config.auto_describe: 'true'
           # Jira ticket context (see the header). The site is only set when a
           # token is passed: a site without credentials makes PR-Agent warn
           # "Jira is partially configured" on every run.
@@ -255,13 +268,13 @@ jobs:
 
             ### PR-Agent review
 
-            [PR-Agent](https://docs.pr-agent.ai) (${{ env.PR_AGENT_MODEL_NAME }}) reviews this PR once, when it's opened or marked ready for review. It doesn't run again on new pushes. Comment a command to run it again on the latest commit.
+            [PR-Agent](https://docs.pr-agent.ai) describes and reviews this PR once, when it's opened or marked ready for review: it adds a summary below your description (${{ env.PR_AGENT_DESCRIBE_MODEL_NAME }}), then reviews the changes and suggests fixes (${{ env.PR_AGENT_MODEL_NAME }}). It doesn't run again on new pushes. Comment a command to run it again on the latest commit.
 
             | Comment | What it does |
             | --- | --- |
             | `/review` | Reviews the changes: key issues, ${{ inputs.review-focus }}, security concerns and review effort |
             | `/improve` | Suggests code changes that fix bugs or real risks |
-            | `/describe` | Adds an AI summary, a file walkthrough and a diagram to the description. Your text and the title are kept |
+            | `/describe` | Updates the AI summary, file walkthrough and diagram in the description. Your text and the title are kept |
             | `/ask "<question>"` | Answers a question about the changes, for example `/ask "${{ inputs.ask-example }}"` |
             | `/help` | Lists every command |
 
